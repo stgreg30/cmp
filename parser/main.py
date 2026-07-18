@@ -4,6 +4,7 @@ import sys
 from dataclasses import asdict
 
 from parser.models.delta import Delta
+from parser.engine.semantic import SemanticEngine
 
 
 class DeltaVisitor(ast.NodeVisitor):
@@ -15,8 +16,11 @@ class DeltaVisitor(ast.NodeVisitor):
 
         for child in ast.walk(node):
 
-            # Return statement
+            # -------------------------
+            # Return
+            # -------------------------
             if isinstance(child, ast.Return):
+
                 self.deltas.append(
                     Delta(
                         kind="RETURN",
@@ -29,8 +33,11 @@ class DeltaVisitor(ast.NodeVisitor):
                     )
                 )
 
-            # Variable assignment
+            # -------------------------
+            # Assignment
+            # -------------------------
             elif isinstance(child, ast.Assign):
+
                 self.deltas.append(
                     Delta(
                         kind="STATE_CHANGE",
@@ -43,7 +50,9 @@ class DeltaVisitor(ast.NodeVisitor):
                     )
                 )
 
-            # Function calls
+            # -------------------------
+            # Function Calls
+            # -------------------------
             elif isinstance(child, ast.Call):
 
                 target = "unknown"
@@ -71,7 +80,7 @@ class DeltaVisitor(ast.NodeVisitor):
 
 def analyze(filename):
 
-    with open(filename, encoding="utf-8") as f:
+    with open(filename, "r", encoding="utf-8") as f:
         source = f.read()
 
     tree = ast.parse(source, filename)
@@ -79,7 +88,14 @@ def analyze(filename):
     visitor = DeltaVisitor()
     visitor.visit(tree)
 
-    result = [asdict(delta) for delta in visitor.deltas]
+    # -------------------------
+    # Semantic Stage
+    # -------------------------
+    engine = SemanticEngine()
+
+    normalized = engine.normalize_all(visitor.deltas)
+
+    result = [asdict(delta) for delta in normalized]
 
     print(json.dumps(result, indent=4))
 
