@@ -3,6 +3,7 @@ import json
 import sys
 
 from parser.models.delta import Delta
+
 from parser.engine.semantic import SemanticEngine
 from parser.engine.memory import MemoryEngine
 from parser.engine.graph import GraphEngine
@@ -15,13 +16,13 @@ class DeltaVisitor(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node):
 
-        current = node.name
+        function = node.name
 
         for child in ast.walk(node):
 
-            # -----------------------------------
+            # -----------------------------
             # Assignment
-            # -----------------------------------
+            # -----------------------------
 
             if isinstance(child, ast.Assign):
 
@@ -34,18 +35,18 @@ class DeltaVisitor(ast.NodeVisitor):
                 self.deltas.append(
                     Delta(
                         kind="STATE_CHANGE",
-                        function=current,
+                        function=function,
                         line=child.lineno,
                         inputs=[],
                         outputs=variables,
                         effects=["WRITE"],
-                        evidence=f"{current}:{child.lineno}"
+                        evidence=f"{function}:{child.lineno}"
                     )
                 )
 
-            # -----------------------------------
-            # Function Calls
-            # -----------------------------------
+            # -----------------------------
+            # Function Call
+            # -----------------------------
 
             elif isinstance(child, ast.Call):
 
@@ -70,18 +71,18 @@ class DeltaVisitor(ast.NodeVisitor):
                 self.deltas.append(
                     Delta(
                         kind="CALL",
-                        function=current,
+                        function=function,
                         line=child.lineno,
                         inputs=arguments,
                         outputs=[target],
                         effects=["CALL"],
-                        evidence=f"{current}:{child.lineno}"
+                        evidence=f"{function}:{child.lineno}"
                     )
                 )
 
-            # -----------------------------------
+            # -----------------------------
             # Return
-            # -----------------------------------
+            # -----------------------------
 
             elif isinstance(child, ast.Return):
 
@@ -96,16 +97,35 @@ class DeltaVisitor(ast.NodeVisitor):
                 self.deltas.append(
                     Delta(
                         kind="RETURN",
-                        function=current,
+                        function=function,
                         line=child.lineno,
                         inputs=[],
                         outputs=outputs,
                         effects=["RETURN"],
-                        evidence=f"{current}:{child.lineno}"
+                        evidence=f"{function}:{child.lineno}"
                     )
                 )
 
         self.generic_visit(node)
+
+
+class CMPCompiler:
+
+    def __init__(self):
+
+        self.semantic = SemanticEngine()
+        self.memory = MemoryEngine()
+        self.graph = GraphEngine()
+
+    def compile(self, deltas):
+
+        deltas = self.semantic.normalize_all(deltas)
+
+        memory = self.memory.build(deltas)
+
+        graph = self.graph.build(memory)
+
+        return graph
 
 
 def analyze(filename):
@@ -118,39 +138,11 @@ def analyze(filename):
     visitor = DeltaVisitor()
     visitor.visit(tree)
 
-    # -----------------------------------
-    # Stage 1
-    # Semantic Normalization
-    # -----------------------------------
+    compiler = CMPCompiler()
 
-    semantic = SemanticEngine()
+    graph = compiler.compile(visitor.deltas)
 
-    normalized = semantic.normalize_all(visitor.deltas)
-
-    # -----------------------------------
-    # Stage 2
-    # Memory Nodes
-    # -----------------------------------
-
-    memory = MemoryEngine()
-
-    memory_nodes = memory.build(normalized)
-
-    # -----------------------------------
-    # Stage 3
-    # CMP Graph
-    # -----------------------------------
-
-    graph = GraphEngine()
-
-    cmp_graph = graph.build(memory_nodes)
-
-    print(
-        json.dumps(
-            cmp_graph,
-            indent=4
-        )
-    )
+    print(json.dumps(graph, indent=4))
 
 
 def main():
