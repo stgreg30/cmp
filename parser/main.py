@@ -1,41 +1,62 @@
 import ast
 import json
 import sys
-from pathlib import Path
 
-graph = {
-    "functions": [],
-    "imports": [],
-    "classes": []
-}
 
-class Visitor(ast.NodeVisitor):
+class DeltaVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.deltas = []
 
-    def visit_FunctionDef(self,node):
-        graph["functions"].append({
-            "name":node.name,
-            "line":node.lineno
-        })
+    def visit_FunctionDef(self, node):
+        current = node.name
+
+        for child in ast.walk(node):
+
+            if isinstance(child, ast.Return):
+                self.deltas.append({
+                    "function": current,
+                    "type": "RETURN",
+                    "line": child.lineno
+                })
+
+            elif isinstance(child, ast.Assign):
+                self.deltas.append({
+                    "function": current,
+                    "type": "STATE_CHANGE",
+                    "line": child.lineno
+                })
+
+            elif isinstance(child, ast.Call):
+
+                if isinstance(child.func, ast.Name):
+
+                    self.deltas.append({
+                        "function": current,
+                        "type": "CALL",
+                        "target": child.func.id,
+                        "line": child.lineno
+                    })
+
         self.generic_visit(node)
 
-    def visit_ClassDef(self,node):
-        graph["classes"].append({
-            "name":node.name,
-            "line":node.lineno
-        })
-        self.generic_visit(node)
 
-    def visit_Import(self,node):
-        for alias in node.names:
-            graph["imports"].append(alias.name)
+def analyze(filename):
 
-    def visit_ImportFrom(self,node):
-        graph["imports"].append(node.module)
+    with open(filename, "r", encoding="utf8") as f:
+        tree = ast.parse(f.read())
 
-path = Path(sys.argv[1])
+    visitor = DeltaVisitor()
 
-tree = ast.parse(path.read_text())
+    visitor.visit(tree)
 
-Visitor().visit(tree)
+    print(json.dumps(visitor.deltas, indent=4))
 
-print(json.dumps(graph,indent=4))
+
+if __name__ == "__main__":
+
+    if len(sys.argv) != 2:
+        print("Usage:")
+        print("python main.py file.py")
+        exit()
+
+    analyze(sys.argv[1])
