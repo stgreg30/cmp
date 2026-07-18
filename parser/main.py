@@ -5,38 +5,30 @@ from dataclasses import asdict
 
 from parser.models.delta import Delta
 from parser.engine.semantic import SemanticEngine
+from parser.engine.memory import MemoryEngine
 
 
 class DeltaVisitor(ast.NodeVisitor):
+
     def __init__(self):
         self.deltas = []
 
     def visit_FunctionDef(self, node):
+
         current = node.name
 
         for child in ast.walk(node):
 
-            # -------------------------
-            # Return
-            # -------------------------
-            if isinstance(child, ast.Return):
-
-                self.deltas.append(
-                    Delta(
-                        kind="RETURN",
-                        function=current,
-                        line=child.lineno,
-                        inputs=[],
-                        outputs=[],
-                        effects=[],
-                        evidence=f"{current}:{child.lineno}"
-                    )
-                )
-
-            # -------------------------
+            # --------------------------
             # Assignment
-            # -------------------------
-            elif isinstance(child, ast.Assign):
+            # --------------------------
+            if isinstance(child, ast.Assign):
+
+                variables = []
+
+                for target in child.targets:
+                    if isinstance(target, ast.Name):
+                        variables.append(target.id)
 
                 self.deltas.append(
                     Delta(
@@ -44,15 +36,15 @@ class DeltaVisitor(ast.NodeVisitor):
                         function=current,
                         line=child.lineno,
                         inputs=[],
-                        outputs=[],
+                        outputs=variables,
                         effects=[],
                         evidence=f"{current}:{child.lineno}"
                     )
                 )
 
-            # -------------------------
-            # Function Calls
-            # -------------------------
+            # --------------------------
+            # Function Call
+            # --------------------------
             elif isinstance(child, ast.Call):
 
                 target = "unknown"
@@ -63,13 +55,48 @@ class DeltaVisitor(ast.NodeVisitor):
                 elif isinstance(child.func, ast.Attribute):
                     target = child.func.attr
 
+                arguments = []
+
+                for arg in child.args:
+
+                    if isinstance(arg, ast.Name):
+                        arguments.append(arg.id)
+
+                    elif isinstance(arg, ast.Constant):
+                        arguments.append(arg.value)
+
                 self.deltas.append(
                     Delta(
                         kind="CALL",
                         function=current,
                         line=child.lineno,
-                        inputs=[],
+                        inputs=arguments,
                         outputs=[target],
+                        effects=[],
+                        evidence=f"{current}:{child.lineno}"
+                    )
+                )
+
+            # --------------------------
+            # Return
+            # --------------------------
+            elif isinstance(child, ast.Return):
+
+                outputs = []
+
+                if isinstance(child.value, ast.Name):
+                    outputs.append(child.value.id)
+
+                elif isinstance(child.value, ast.Constant):
+                    outputs.append(child.value.value)
+
+                self.deltas.append(
+                    Delta(
+                        kind="RETURN",
+                        function=current,
+                        line=child.lineno,
+                        inputs=[],
+                        outputs=outputs,
                         effects=[],
                         evidence=f"{current}:{child.lineno}"
                     )
@@ -88,23 +115,35 @@ def analyze(filename):
     visitor = DeltaVisitor()
     visitor.visit(tree)
 
-    # -------------------------
+    # --------------------------
     # Semantic Stage
-    # -------------------------
-    engine = SemanticEngine()
+    # --------------------------
 
-    normalized = engine.normalize_all(visitor.deltas)
+    semantic = SemanticEngine()
 
-    result = [asdict(delta) for delta in normalized]
+    normalized = semantic.normalize_all(visitor.deltas)
 
-    print(json.dumps(result, indent=4))
+    # --------------------------
+    # Memory Stage
+    # --------------------------
+
+    memory = MemoryEngine()
+
+    nodes = memory.build(normalized)
+
+    print(
+        json.dumps(
+            [asdict(node) for node in nodes],
+            indent=4
+        )
+    )
 
 
 def main():
 
     if len(sys.argv) != 2:
         print("Usage:")
-        print("python parser/main.py example.py")
+        print("python parser/main.py parser/example.py")
         sys.exit(1)
 
     analyze(sys.argv[1])
