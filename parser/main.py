@@ -3,7 +3,7 @@ import json
 import sys
 from dataclasses import asdict
 
-from models.delta import Delta
+from parser.models.delta import Delta
 
 
 class DeltaVisitor(ast.NodeVisitor):
@@ -15,6 +15,7 @@ class DeltaVisitor(ast.NodeVisitor):
 
         for child in ast.walk(node):
 
+            # Return statement
             if isinstance(child, ast.Return):
                 self.deltas.append(
                     Delta(
@@ -28,6 +29,7 @@ class DeltaVisitor(ast.NodeVisitor):
                     )
                 )
 
+            # Variable assignment
             elif isinstance(child, ast.Assign):
                 self.deltas.append(
                     Delta(
@@ -41,6 +43,7 @@ class DeltaVisitor(ast.NodeVisitor):
                     )
                 )
 
+            # Function calls
             elif isinstance(child, ast.Call):
 
                 target = "unknown"
@@ -67,25 +70,29 @@ class DeltaVisitor(ast.NodeVisitor):
 
 
 def analyze(filename):
-    with open(filename, "r", encoding="utf8") as f:
-        tree = ast.parse(f.read(), filename)
+
+    with open(filename, encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source, filename)
 
     visitor = DeltaVisitor()
     visitor.visit(tree)
 
-    print(
-        json.dumps(
-            [asdict(delta) for delta in visitor.deltas],
-            indent=4
-        )
-    )
+    result = [asdict(delta) for delta in visitor.deltas]
+
+    print(json.dumps(result, indent=4))
 
 
-if __name__ == "__main__":
+def main():
 
     if len(sys.argv) != 2:
         print("Usage:")
-        print("python main.py <file.py>")
+        print("python parser/main.py example.py")
         sys.exit(1)
 
     analyze(sys.argv[1])
+
+
+if __name__ == "__main__":
+    main()
