@@ -1,11 +1,11 @@
 import ast
 import json
 import sys
-from dataclasses import asdict
 
 from parser.models.delta import Delta
 from parser.engine.semantic import SemanticEngine
 from parser.engine.memory import MemoryEngine
+from parser.engine.graph import GraphEngine
 
 
 class DeltaVisitor(ast.NodeVisitor):
@@ -19,9 +19,10 @@ class DeltaVisitor(ast.NodeVisitor):
 
         for child in ast.walk(node):
 
-            # --------------------------
+            # -----------------------------------
             # Assignment
-            # --------------------------
+            # -----------------------------------
+
             if isinstance(child, ast.Assign):
 
                 variables = []
@@ -37,14 +38,15 @@ class DeltaVisitor(ast.NodeVisitor):
                         line=child.lineno,
                         inputs=[],
                         outputs=variables,
-                        effects=[],
+                        effects=["WRITE"],
                         evidence=f"{current}:{child.lineno}"
                     )
                 )
 
-            # --------------------------
-            # Function Call
-            # --------------------------
+            # -----------------------------------
+            # Function Calls
+            # -----------------------------------
+
             elif isinstance(child, ast.Call):
 
                 target = "unknown"
@@ -72,14 +74,15 @@ class DeltaVisitor(ast.NodeVisitor):
                         line=child.lineno,
                         inputs=arguments,
                         outputs=[target],
-                        effects=[],
+                        effects=["CALL"],
                         evidence=f"{current}:{child.lineno}"
                     )
                 )
 
-            # --------------------------
+            # -----------------------------------
             # Return
-            # --------------------------
+            # -----------------------------------
+
             elif isinstance(child, ast.Return):
 
                 outputs = []
@@ -97,7 +100,7 @@ class DeltaVisitor(ast.NodeVisitor):
                         line=child.lineno,
                         inputs=[],
                         outputs=outputs,
-                        effects=[],
+                        effects=["RETURN"],
                         evidence=f"{current}:{child.lineno}"
                     )
                 )
@@ -115,25 +118,36 @@ def analyze(filename):
     visitor = DeltaVisitor()
     visitor.visit(tree)
 
-    # --------------------------
-    # Semantic Stage
-    # --------------------------
+    # -----------------------------------
+    # Stage 1
+    # Semantic Normalization
+    # -----------------------------------
 
     semantic = SemanticEngine()
 
     normalized = semantic.normalize_all(visitor.deltas)
 
-    # --------------------------
-    # Memory Stage
-    # --------------------------
+    # -----------------------------------
+    # Stage 2
+    # Memory Nodes
+    # -----------------------------------
 
     memory = MemoryEngine()
 
-    nodes = memory.build(normalized)
+    memory_nodes = memory.build(normalized)
+
+    # -----------------------------------
+    # Stage 3
+    # CMP Graph
+    # -----------------------------------
+
+    graph = GraphEngine()
+
+    cmp_graph = graph.build(memory_nodes)
 
     print(
         json.dumps(
-            [asdict(node) for node in nodes],
+            cmp_graph,
             indent=4
         )
     )
