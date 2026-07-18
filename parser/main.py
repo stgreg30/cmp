@@ -1,6 +1,9 @@
 import ast
 import json
 import sys
+from dataclasses import asdict
+
+from models.delta import Delta
 
 
 class DeltaVisitor(ast.NodeVisitor):
@@ -13,50 +16,76 @@ class DeltaVisitor(ast.NodeVisitor):
         for child in ast.walk(node):
 
             if isinstance(child, ast.Return):
-                self.deltas.append({
-                    "function": current,
-                    "type": "RETURN",
-                    "line": child.lineno
-                })
+                self.deltas.append(
+                    Delta(
+                        kind="RETURN",
+                        function=current,
+                        line=child.lineno,
+                        inputs=[],
+                        outputs=[],
+                        effects=[],
+                        evidence=f"{current}:{child.lineno}"
+                    )
+                )
 
             elif isinstance(child, ast.Assign):
-                self.deltas.append({
-                    "function": current,
-                    "type": "STATE_CHANGE",
-                    "line": child.lineno
-                })
+                self.deltas.append(
+                    Delta(
+                        kind="STATE_CHANGE",
+                        function=current,
+                        line=child.lineno,
+                        inputs=[],
+                        outputs=[],
+                        effects=[],
+                        evidence=f"{current}:{child.lineno}"
+                    )
+                )
 
             elif isinstance(child, ast.Call):
 
-                if isinstance(child.func, ast.Name):
+                target = "unknown"
 
-                    self.deltas.append({
-                        "function": current,
-                        "type": "CALL",
-                        "target": child.func.id,
-                        "line": child.lineno
-                    })
+                if isinstance(child.func, ast.Name):
+                    target = child.func.id
+
+                elif isinstance(child.func, ast.Attribute):
+                    target = child.func.attr
+
+                self.deltas.append(
+                    Delta(
+                        kind="CALL",
+                        function=current,
+                        line=child.lineno,
+                        inputs=[],
+                        outputs=[target],
+                        effects=[],
+                        evidence=f"{current}:{child.lineno}"
+                    )
+                )
 
         self.generic_visit(node)
 
 
 def analyze(filename):
-
     with open(filename, "r", encoding="utf8") as f:
-        tree = ast.parse(f.read())
+        tree = ast.parse(f.read(), filename)
 
     visitor = DeltaVisitor()
-
     visitor.visit(tree)
 
-    print(json.dumps(visitor.deltas, indent=4))
+    print(
+        json.dumps(
+            [asdict(delta) for delta in visitor.deltas],
+            indent=4
+        )
+    )
 
 
 if __name__ == "__main__":
 
     if len(sys.argv) != 2:
         print("Usage:")
-        print("python main.py file.py")
-        exit()
+        print("python main.py <file.py>")
+        sys.exit(1)
 
     analyze(sys.argv[1])
